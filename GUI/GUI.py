@@ -1,10 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-# --- IMPORTAR TU LÓGICA MTM AQUÍ ---
-# from turing_machine import AnalizadorMTM 
-# (Si no tienes el archivo aún, usaremos una simulación abajo en la función 'enviar_a_mtm')
-
 # --- CONSTANTES Y MAPEO ---
 FONT_MAIN = ("Consolas", 10)
 
@@ -168,24 +164,21 @@ class FactorBlock(tk.Frame):
         elif sel == "Función":
             display_name = self.func_selector.get()
             
-            # LOGICA DUAL: 
             if readable:
                 # Versión legible
                 inner_str = self.inner_expr.get_string(readable=True)
                 if display_name == "1/( )":
-                    base_str = f"1/({inner_str})" # Mostramos el 1
+                    base_str = f"1/({inner_str})"
                 else:
-                    base_str = f"{display_name}({inner_str})" # Mostramos 'sen', 'cos'
+                    base_str = f"{display_name}({inner_str})"
             else:
                 # Versión MTM
                 mtm_symbol = FUNCTION_MAP.get(display_name, "?")
                 inner_str = self.inner_expr.get_string(readable=False)
-                base_str = f"{mtm_symbol}({inner_str})" # Mostramos 'S', '/'
+                base_str = f"{mtm_symbol}({inner_str})"
 
-        # Manejo de Exponente (Igual para ambos, pero recursivo)
         if self.has_exponent:
             exp_str = self.exponent_expr.get_string(readable=readable)
-            # Estructura (base)^(exponente)
             return f"({base_str})^({exp_str})"
         
         return base_str
@@ -195,7 +188,6 @@ class TermBlock(tk.Frame):
         super().__init__(parent, relief="groove", borderwidth=2, bg="#e0e0e0", *args, **kwargs)
         self.allow_y = allow_y
         
-        # Control
         ctrl_frame = tk.Frame(self, bg="#d0d0d0")
         ctrl_frame.pack(side="top", fill="x")
         
@@ -205,7 +197,6 @@ class TermBlock(tk.Frame):
         tk.Button(ctrl_frame, text="* Factor", command=self.add_factor, font=("Arial", 7)).pack(side="left", padx=5)
         tk.Button(ctrl_frame, text="Eliminar", bg="#ffaaaa", command=self.destroy, font=("Arial", 7)).pack(side="right")
         
-        # Area Factores
         self.factors_area = tk.Frame(self, bg="#e0e0e0")
         self.factors_area.pack(side="top", fill="x", padx=2, pady=2)
         self.factors = []
@@ -232,8 +223,6 @@ class ExpressionBlock(tk.Frame):
         super().__init__(parent, *args, **kwargs)
         self.allow_y = allow_y
         self.vertical_stack = vertical_stack
-        
-        # Inicializar lista de términos
         self.terms = [] 
         
         self.terms_area = tk.Frame(self)
@@ -281,20 +270,28 @@ class DifferentialEquationGUI:
         main_split.pack(fill="both", expand=True, padx=10, pady=5)
         
         # --- LHS (Izquierda) ---
-        lhs_c = tk.LabelFrame(main_split, text="Lado Izquierdo (Contiene Y)", font=FONT_MAIN, bg="#eef")
+        lhs_c = tk.LabelFrame(main_split, text="Panel 1 (Contiene Y)", font=FONT_MAIN, bg="#eef")
         main_split.add(lhs_c, minsize=450)
         self.lhs_scroll = ScrollableFrame(lhs_c, bg_color="#eef")
         self.lhs_scroll.pack(fill="both", expand=True)
         self.lhs_editor = ExpressionBlock(self.lhs_scroll.scrollable_content, allow_y=True, vertical_stack=True)
         self.lhs_editor.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # --- IGUALDAD ---
-        eq_f = tk.Frame(main_split, bg="white")
-        main_split.add(eq_f, minsize=40)
-        tk.Label(eq_f, text="=", font=("Arial", 26, "bold")).pack(expand=True)
+        # --- OPERADOR CENTRAL (SELECTOR) ---
+        op_f = tk.Frame(main_split, bg="white")
+        main_split.add(op_f, minsize=60)
+        
+        tk.Label(op_f, text="Signo:", font=("Arial", 8)).pack(pady=5)
+        
+        # AQUI ESTA EL CAMBIO: Combobox para elegir "=" o "+"
+        self.operator_var = tk.StringVar(value="=")
+        self.operator_selector = ttk.Combobox(op_f, textvariable=self.operator_var, 
+                                              values=["=", "+"], state="readonly", 
+                                              width=3, font=("Arial", 14, "bold"), justify="center")
+        self.operator_selector.pack(expand=True)
         
         # --- RHS (Derecha) ---
-        rhs_c = tk.LabelFrame(main_split, text="Lado Derecho (f(x) o Constantes)", font=FONT_MAIN, bg="#fee")
+        rhs_c = tk.LabelFrame(main_split, text="Panel 2 (f(x) o Constantes)", font=FONT_MAIN, bg="#fee")
         main_split.add(rhs_c, minsize=450)
         self.rhs_scroll = ScrollableFrame(rhs_c, bg_color="#fee")
         self.rhs_scroll.pack(fill="both", expand=True)
@@ -324,15 +321,20 @@ class DifferentialEquationGUI:
 
     def procesar_ecuacion(self):
         try:
+            # Obtener el operador central
+            operator = self.operator_var.get()
+            
             # 1. Obtener cadena LEGIBLE
             lhs_h = self.lhs_editor.get_string(readable=True)
             rhs_h = self.rhs_editor.get_string(readable=True)
-            final_human = f"{lhs_h}={rhs_h}"
+            # Usamos espacios para que se vea mejor al ojo humano
+            final_human = f"{lhs_h} {operator} {rhs_h}"
             
             # 2. Obtener cadena MTM
             lhs_m = self.lhs_editor.get_string(readable=False)
             rhs_m = self.rhs_editor.get_string(readable=False)
-            final_mtm = f"{lhs_m}={rhs_m}"
+            # Sin espacios extra para la MTM
+            final_mtm = f"{lhs_m}{operator}{rhs_m}"
             
             # 3. Mostrar en pantalla
             self.out_human.delete(0, tk.END)
@@ -349,17 +351,10 @@ class DifferentialEquationGUI:
 
     def enviar_a_mtm(self, cadena):
         """
-        Aquí es donde conectas con tu otro archivo.
+        Función puente para conectar con el archivo de la lógica.
         """
         print(f"Enviando a Turing Machine: {cadena}")
-        
-        # --- EJEMPLO DE USO REAL ---
-        # mtm_instance = AnalizadorMTM()
-        # resultado = mtm_instance.procesar_cadena(cadena)
-        # messagebox.showinfo("Resultado MTM", f"La máquina dice: {resultado}")
-        
-        # Por ahora, solo simulamos:
-        messagebox.showinfo("Conexión", f"Cadena enviada al backend:\n{cadena}")
+        messagebox.showinfo("MTM Link", f"Cadena enviada al backend:\n{cadena}")
 
 if __name__ == "__main__":
     root = tk.Tk()
