@@ -1,526 +1,266 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
-import re
+from tkinter import ttk, messagebox
 
-class FactorWidget:
-    """Representa un factor individual en un término"""
-    def __init__(self, parent_frame, parent_termino, on_change_callback):
-        self.parent_termino = parent_termino
-        self.on_change = on_change_callback
+# --- CONSTANTES ---
+FONT_MAIN = ("Consolas", 10)
+BG_COLOR = "#f0f0f0"
+PAD = 5
+
+class FactorBlock(tk.Frame):
+    def __init__(self, parent, allow_y=True, *args, **kwargs):
+        super().__init__(parent, relief="solid", borderwidth=1, *args, **kwargs)
+        self.allow_y = allow_y
         
-        # Frame principal del factor
-        self.frame = tk.Frame(parent_frame, relief=tk.RIDGE, borderwidth=1, bg="#f0f0f0")
-        self.frame.pack(side=tk.LEFT, padx=2, pady=2)
+        # Header del Factor
+        top_frame = tk.Frame(self)
+        top_frame.pack(side="top", fill="x", padx=2, pady=2)
         
-        # Tipo de factor
-        self.tipo_var = tk.StringVar(value="numero")
+        tk.Label(top_frame, text="Factor:", font=("Arial", 8, "bold")).pack(side="left")
         
-        # Frame para selector de tipo
-        tipo_frame = tk.Frame(self.frame, bg="#f0f0f0")
-        tipo_frame.pack(padx=5, pady=2)
+        # Selector de Tipo
+        options = ["Número", "Variable X", "Función"]
+        if self.allow_y:
+            options.append("Variable Y")
+            
+        self.type_var = tk.StringVar(value="Número")
+        self.combo = ttk.Combobox(top_frame, textvariable=self.type_var, values=options, state="readonly", width=10)
+        self.combo.pack(side="left", padx=5)
+        self.combo.bind("<<ComboboxSelected>>", self.update_content)
         
-        tk.Label(tipo_frame, text="Tipo:", bg="#f0f0f0", font=("Arial", 8)).pack(side=tk.LEFT)
-        self.tipo_combo = ttk.Combobox(tipo_frame, textvariable=self.tipo_var, 
-                                       values=["numero", "variable", "funcion", "potencia"],
-                                       state="readonly", width=10, font=("Arial", 8))
-        self.tipo_combo.pack(side=tk.LEFT, padx=2)
-        self.tipo_combo.bind("<<ComboboxSelected>>", self.on_tipo_changed)
+        # Botón eliminar factor
+        btn_del = tk.Button(top_frame, text="X", bg="#ffcccc", command=self.destroy_self, font=("Arial", 7))
+        btn_del.pack(side="right")
+
+        # Contenido dinámico
+        self.content_frame = tk.Frame(self, padx=5, pady=5)
+        self.content_frame.pack(side="top", fill="x")
         
-        # Frame para contenido específico del tipo
-        self.contenido_frame = tk.Frame(self.frame, bg="#f0f0f0")
-        self.contenido_frame.pack(padx=5, pady=2)
-        
-        # Botón eliminar
-        btn_frame = tk.Frame(self.frame, bg="#f0f0f0")
-        btn_frame.pack(padx=5, pady=2)
-        tk.Button(btn_frame, text="❌", command=self.eliminar, 
-                 bg="#ff6b6b", fg="white", font=("Arial", 8)).pack()
-        
-        # Inicializar contenido
-        self.widgets_especificos = {}
-        self.crear_contenido_numero()
-    
-    def on_tipo_changed(self, event=None):
-        """Cambio en el tipo de factor"""
-        # Limpiar contenido anterior
-        for widget in self.contenido_frame.winfo_children():
+        # Inicializar vista
+        self.current_widget = None
+        self.update_content()
+
+    def destroy_self(self):
+        self.destroy()
+
+    def update_content(self, event=None):
+        # Limpiar frame anterior
+        for widget in self.content_frame.winfo_children():
             widget.destroy()
+            
+        selection = self.type_var.get()
         
-        self.widgets_especificos.clear()
-        
-        tipo = self.tipo_var.get()
-        if tipo == "numero":
-            self.crear_contenido_numero()
-        elif tipo == "variable":
-            self.crear_contenido_variable()
-        elif tipo == "funcion":
-            self.crear_contenido_funcion()
-        elif tipo == "potencia":
-            self.crear_contenido_potencia()
-        
-        self.on_change()
-    
-    def crear_contenido_numero(self):
-        """Input para número"""
-        # Función de validación
-        def validar_numero(char):
-            return char in '0123456789.eπ'
-        
-        vcmd = (self.contenido_frame.register(validar_numero), '%S')
-        
-        self.widgets_especificos['entry'] = tk.Entry(self.contenido_frame, width=8, 
-                                                      font=("Arial", 10),
-                                                      validate='key',
-                                                      validatecommand=vcmd)
-        self.widgets_especificos['entry'].pack()
-        self.widgets_especificos['entry'].insert(0, "0")
-        self.widgets_especificos['entry'].bind("<KeyRelease>", lambda e: self.on_change())
-        
-        # Botones para constantes
-        const_frame = tk.Frame(self.contenido_frame, bg="#f0f0f0")
-        const_frame.pack()
-        tk.Button(const_frame, text="π", command=lambda: self.insertar_constante("π"),
-                 font=("Arial", 8), width=3).pack(side=tk.LEFT, padx=1)
-        tk.Button(const_frame, text="e", command=lambda: self.insertar_constante("e"),
-                 font=("Arial", 8), width=3).pack(side=tk.LEFT, padx=1)
-    
-    def insertar_constante(self, const):
-        entry = self.widgets_especificos.get('entry')
-        if entry:
-            entry.delete(0, tk.END)
-            entry.insert(0, const)
-            self.on_change()
-    
-    def crear_contenido_variable(self):
-        """Selector para x o y con derivadas"""
-        # Solo permitir x en lado derecho, todo en lado izquierdo
-        permitir_y = self.parent_termino.parent_expresion.permitir_y
-        
-        if permitir_y:
-            valores = ["x", "y", "y'", "y''", "y'''", "y''''"]
-        else:
-            valores = ["x"]
-        
-        var_var = tk.StringVar(value="x")
-        self.widgets_especificos['var'] = var_var
-        
-        combo = ttk.Combobox(self.contenido_frame, textvariable=var_var,
-                            values=valores, state="readonly", width=8, font=("Arial", 10))
-        combo.pack()
-        combo.bind("<<ComboboxSelected>>", lambda e: self.on_change())
-    
-    def crear_contenido_funcion(self):
-        """Selector de función + expresión interna"""
-        # Selector de función
-        func_var = tk.StringVar(value="S")
-        self.widgets_especificos['func'] = func_var
-        
-        funciones = {
-            "sen": "S", "cos": "C", "tan": "T", 
-            "ln": "L", "√": "R", "|x|": "A",
-            "sec": "s", "csc": "c", "cot": "t",
-            "arc": "I", "e^": "E", "1/": "/"
-        }
-        
-        func_frame = tk.Frame(self.contenido_frame, bg="#f0f0f0")
-        func_frame.pack()
-        
-        tk.Label(func_frame, text="Función:", bg="#f0f0f0", font=("Arial", 8)).pack(side=tk.LEFT)
-        func_combo = ttk.Combobox(func_frame, textvariable=func_var,
-                                 values=list(funciones.values()), 
-                                 state="readonly", width=6, font=("Arial", 9))
-        func_combo.pack(side=tk.LEFT)
-        func_combo.bind("<<ComboboxSelected>>", lambda e: self.on_change())
-        
-        # Mapeo de nombres amigables
-        self.widgets_especificos['func_map'] = funciones
-        
-        # Expresión interna (recursiva)
-        tk.Label(self.contenido_frame, text="Argumento:", bg="#f0f0f0", 
-                font=("Arial", 8, "bold")).pack()
-        
-        # Crear una mini-expresión dentro
-        from_function = True  # Flag para expresión anidada
-        self.widgets_especificos['expresion'] = ExpresionWidget(
-            self.contenido_frame, 
-            permitir_y=self.parent_termino.parent_expresion.permitir_y,
-            on_change_callback=self.on_change,
-            compact=True  # Modo compacto para funciones
-        )
-    
-    def crear_contenido_potencia(self):
-        """Potencia: (base)^(exponente)"""
-        tk.Label(self.contenido_frame, text="(  )^(  )", bg="#f0f0f0",
-                font=("Arial", 10, "bold")).pack()
-        
-        # Frame para base
-        base_frame = tk.LabelFrame(self.contenido_frame, text="Base", 
-                                   bg="#f0f0f0", font=("Arial", 8))
-        base_frame.pack(padx=2, pady=2, fill=tk.BOTH)
-        self.widgets_especificos['base'] = FactorWidget(base_frame, self.parent_termino, self.on_change)
-        
-        # Frame para exponente
-        exp_frame = tk.LabelFrame(self.contenido_frame, text="Exponente",
-                                  bg="#f0f0f0", font=("Arial", 8))
-        exp_frame.pack(padx=2, pady=2, fill=tk.BOTH)
-        self.widgets_especificos['exponente'] = FactorWidget(exp_frame, self.parent_termino, self.on_change)
-    
-    def eliminar(self):
-        """Eliminar este factor"""
-        self.parent_termino.eliminar_factor(self)
-    
-    def to_string(self):
-        """Generar string del factor"""
-        tipo = self.tipo_var.get()
-        
-        if tipo == "numero":
-            valor = self.widgets_especificos['entry'].get().strip()
-            return valor if valor else "0"
-        
-        elif tipo == "variable":
-            return self.widgets_especificos['var'].get()
-        
-        elif tipo == "funcion":
-            func_letra = self.widgets_especificos['func'].get()
-            expr = self.widgets_especificos['expresion'].to_string()
-            return f"{func_letra}({expr})"
-        
-        elif tipo == "potencia":
-            base = self.widgets_especificos['base'].to_string()
-            exp = self.widgets_especificos['exponente'].to_string()
-            return f"({base})^({exp})"
-        
+        if selection == "Número":
+            self.current_widget = tk.Entry(self.content_frame, width=8)
+            self.current_widget.insert(0, "1")
+            self.current_widget.pack()
+            
+        elif selection == "Variable X":
+            self.current_widget = tk.Label(self.content_frame, text="x", font=("Times", 14, "italic"))
+            self.current_widget.pack()
+            
+        elif selection == "Variable Y":
+            frame = tk.Frame(self.content_frame)
+            frame.pack()
+            tk.Label(frame, text="y", font=("Times", 14, "italic")).pack(side="left")
+            # Selector de derivadas
+            tk.Label(frame, text="Derivada:").pack(side="left", padx=5)
+            self.deriv_spin = tk.Spinbox(frame, from_=0, to=10, width=3) # 0 = y, 1 = y', etc.
+            self.deriv_spin.pack(side="left")
+            self.current_widget = "y_complex" # Marcador lógico
+            
+        elif selection == "Función":
+            frame = tk.Frame(self.content_frame)
+            frame.pack()
+            
+            # Selector de función
+            funcs = ["sen", "cos", "tan", "ln", "exp", "sqrt"]
+            self.func_selector = ttk.Combobox(frame, values=funcs, state="readonly", width=5)
+            self.func_selector.set("sen")
+            self.func_selector.pack(side="left")
+            
+            tk.Label(frame, text="(").pack(side="left")
+            
+            # RECURSIVIDAD: Aquí metemos una Expresión completa dentro de la función
+            # NOTA: Dentro de una función, ¿permitimos 'y'? 
+            # Si quieres ecuaciones lineales estrictas, NO permitas 'y' dentro de funciones.
+            # Si quieres permitir No-Lineales, pon allow_y=True. 
+            # Según tu descripción, "Linealidad" la revisa la MTM, así que dejemos True o self.allow_y
+            self.inner_expr = ExpressionBlock(frame, allow_y=self.allow_y) 
+            self.inner_expr.pack(side="left", padx=2)
+            
+            tk.Label(frame, text=")").pack(side="left")
+            self.current_widget = "func_complex"
+
+    def get_string(self):
+        sel = self.type_var.get()
+        if sel == "Número":
+            return self.current_widget.get().strip()
+        elif sel == "Variable X":
+            return "x"
+        elif sel == "Variable Y":
+            derivs = int(self.deriv_spin.get())
+            return "y" + ("'" * derivs)
+        elif sel == "Función":
+            func_name = self.func_selector.get()
+            # Mapeo de nombres si tu gramática usa S, C, etc.
+            # Por ahora uso nombres completos. Ajustar a tu gramática:
+            grammar_map = {"sen": "sen", "cos": "cos", "tan": "tan", "ln": "ln", "exp": "exp", "sqrt": "sqrt"}
+            inner = self.inner_expr.get_string()
+            return f"{grammar_map[func_name]}({inner})"
         return ""
 
-
-class TerminoWidget:
-    """Representa un término completo"""
-    def __init__(self, parent_frame, parent_expresion, derivada_orden, on_change_callback):
-        self.parent_expresion = parent_expresion
-        self.on_change = on_change_callback
-        self.derivada_orden = derivada_orden
-        self.factores = []
+class TermBlock(tk.Frame):
+    def __init__(self, parent, allow_y=True, *args, **kwargs):
+        super().__init__(parent, relief="groove", borderwidth=2, bg="#e0e0e0", *args, **kwargs)
+        self.allow_y = allow_y
         
-        # Frame principal
-        self.frame = tk.Frame(parent_frame, relief=tk.SUNKEN, borderwidth=2, bg="#e8f4f8")
-        self.frame.pack(fill=tk.X, padx=5, pady=3)
+        # Control del Término
+        ctrl_frame = tk.Frame(self, bg="#d0d0d0")
+        ctrl_frame.pack(side="top", fill="x")
         
-        # Header con checkbox negativo y label de derivada
-        header_frame = tk.Frame(self.frame, bg="#e8f4f8")
-        header_frame.pack(fill=tk.X, padx=5, pady=2)
+        # Signo
+        self.sign_var = tk.StringVar(value="+")
+        tk.Button(ctrl_frame, textvariable=self.sign_var, command=self.toggle_sign, width=3).pack(side="left")
         
-        self.negativo_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(header_frame, text="Negativo (-)", variable=self.negativo_var,
-                      command=self.on_change, bg="#e8f4f8", font=("Arial", 9)).pack(side=tk.LEFT)
-        
-        # Mostrar derivada
-        derivada_texto = self.get_derivada_texto()
-        tk.Label(header_frame, text=f"Término de {derivada_texto}", 
-                font=("Arial", 10, "bold"), bg="#e8f4f8", fg="#0066cc").pack(side=tk.LEFT, padx=10)
-        
-        # Botón eliminar término
-        tk.Button(header_frame, text="🗑️ Eliminar término", command=self.eliminar,
-                 bg="#ff4444", fg="white", font=("Arial", 8)).pack(side=tk.RIGHT)
-        
-        # Frame para factores
-        self.factores_frame = tk.Frame(self.frame, bg="#e8f4f8")
-        self.factores_frame.pack(fill=tk.BOTH, padx=5, pady=2)
-        
-        # Agregar primer factor
-        self.agregar_factor()
+        tk.Label(ctrl_frame, text="Término", bg="#d0d0d0").pack(side="left", padx=5)
         
         # Botón agregar factor
-        tk.Button(self.frame, text="✚ Agregar factor (multiplicar)", 
-                 command=self.agregar_factor, bg="#4CAF50", fg="white",
-                 font=("Arial", 9)).pack(pady=3)
+        tk.Button(ctrl_frame, text="Agrega Factor (*)", command=self.add_factor, font=("Arial", 8)).pack(side="left", padx=5)
         
-        # Mostrar derivada al final SOLO si permite y
-        if self.parent_expresion.permitir_y:
-            tk.Label(self.frame, text=f"× {derivada_texto}", 
-                    font=("Arial", 11, "bold"), bg="#e8f4f8", fg="#cc0000").pack(pady=2)
-    
-    def get_derivada_texto(self):
-        """Obtener texto de la derivada según orden"""
-        if self.derivada_orden == 0:
-            return "y"
-        else:
-            return "y" + "'" * self.derivada_orden
-    
-    def agregar_factor(self):
-        """Agregar nuevo factor al término"""
-        factor = FactorWidget(self.factores_frame, self, self.on_change)
-        self.factores.append(factor)
-        self.on_change()
-    
-    def eliminar_factor(self, factor):
-        """Eliminar un factor específico"""
-        if len(self.factores) > 1:
-            self.factores.remove(factor)
-            factor.frame.destroy()
-            self.on_change()
-        else:
-            messagebox.showwarning("Advertencia", "Un término debe tener al menos un factor")
-    
-    def eliminar(self):
-        """Eliminar este término completo"""
-        self.parent_expresion.eliminar_termino(self)
-    
-    def to_string(self):
-        """Generar string del término"""
-        # Unir factores con *
-        factores_str = "*".join(f.to_string() for f in self.factores)
+        # Botón eliminar término completo
+        tk.Button(ctrl_frame, text="Eliminar Término", bg="#ffaaaa", command=self.destroy, font=("Arial", 8)).pack(side="right")
         
-        # Agregar derivada SOLO si permite y
-        if self.parent_expresion.permitir_y:
-            derivada_str = self.get_derivada_texto()
-            if factores_str and factores_str != "0":
-                resultado = f"{factores_str}*{derivada_str}"
-            else:
-                return ""
-        else:
-            # Lado derecho: sin derivadas
-            resultado = factores_str if factores_str else "0"
+        # Area de Factores
+        self.factors_area = tk.Frame(self)
+        self.factors_area.pack(side="top", fill="x", padx=5, pady=5)
         
-        # Agregar signo negativo si aplica
-        if self.negativo_var.get():
-            resultado = "-" + resultado
-        
-        return resultado
+        self.factors = []
+        # Agregar un factor por defecto
+        self.add_factor()
 
+    def toggle_sign(self):
+        self.sign_var.set("-" if self.sign_var.get() == "+" else "+")
 
-class ExpresionWidget:
-    """Representa una expresión completa (suma de términos)"""
-    def __init__(self, parent_frame, permitir_y=True, on_change_callback=None, compact=False):
-        self.permitir_y = permitir_y
-        self.on_change = on_change_callback if on_change_callback else lambda: None
-        self.terminos = []
-        self.compact = compact
+    def add_factor(self):
+        # Separador visual si no es el primero
+        if self.factors:
+            tk.Label(self.factors_area, text="*", font=("Arial", 12, "bold")).pack(side="left")
+            
+        f = FactorBlock(self.factors_area, allow_y=self.allow_y)
+        f.pack(side="left", padx=2)
+        self.factors.append(f)
+
+    def get_string(self):
+        sign = "-" if self.sign_var.get() == "-" else "" # Si es +, no ponemos nada o ponemos + segun gramatica
+        # Tu gramatica: <término> => <factor> | -<factor>
+        # Vamos a construir: factor * factor * factor
+        parts = [f.get_string() for f in self.factors if f.winfo_exists()] # Check si no fue borrado manualmente
+        term_str = "*".join(parts)
+        return f"{sign}{term_str}"
+
+class ExpressionBlock(tk.Frame):
+    def __init__(self, parent, allow_y=True, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.allow_y = allow_y
+        self.terms = []
         
-        # Frame principal
-        self.frame = tk.Frame(parent_frame, bg="#ffffff")
-        if compact:
-            self.frame.pack(fill=tk.BOTH, padx=2, pady=2)
-        else:
-            self.frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # Botón para añadir término
+        self.btn_add = tk.Button(self, text="+ Añadir Término", command=self.add_term, bg="#ccffcc")
+        self.btn_add.pack(side="bottom", fill="x", pady=2)
         
-        # Botón agregar término (ARRIBA DEL CANVAS)
-        if not compact:
-            tk.Button(self.frame, text="➕ Agregar término (sumar)", 
-                     command=lambda: self.agregar_termino(), 
-                     bg="#2196F3", fg="white", font=("Arial", 10, "bold")).pack(pady=5, fill=tk.X)
+        # Area de términos
+        self.terms_area = tk.Frame(self)
+        self.terms_area.pack(side="top", fill="both", expand=True)
         
-        # Scrollable frame para términos
-        canvas = tk.Canvas(self.frame, bg="#ffffff")
-        scrollbar = tk.Scrollbar(self.frame, orient="vertical", command=canvas.yview)
-        self.terminos_frame = tk.Frame(canvas, bg="#ffffff")
-        
-        self.terminos_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=self.terminos_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        if not compact:
-            canvas.pack(side="left", fill="both", expand=True)
-            scrollbar.pack(side="right", fill="y")
-        else:
-            canvas.pack(fill="both", expand=True)
-        
-        # Agregar primer término
-        if permitir_y:
-            # Lado izquierdo: empezar con y (orden 0)
-            self.agregar_termino(orden_inicial=0 if not compact else 0)
-        else:
-            # Lado derecho: solo constantes/x
-            self.agregar_termino(orden_inicial=None)
-    
-    def agregar_termino(self, orden_inicial=None):
-        """Agregar nuevo término"""
-        if orden_inicial is None:
-            # Calcular siguiente orden de derivada
-            if self.permitir_y and self.terminos:
-                ultimo_orden = self.terminos[-1].derivada_orden
-                nuevo_orden = ultimo_orden + 1  # Incrementar (y, y', y'', ...)
-            elif self.permitir_y:
-                nuevo_orden = 0  # Empezar con y (sin derivadas)
-            else:
-                nuevo_orden = -1  # Lado derecho, sin derivadas
-        else:
-            nuevo_orden = orden_inicial
-        
-        termino = TerminoWidget(self.terminos_frame, self, nuevo_orden, self.on_change)
-        self.terminos.append(termino)
-        self.on_change()
-    
-    def eliminar_termino(self, termino):
-        """Eliminar término específico"""
-        if len(self.terminos) > 1:
-            self.terminos.remove(termino)
-            termino.frame.destroy()
-            self.on_change()
-        else:
-            messagebox.showwarning("Advertencia", "Una expresión debe tener al menos un término")
-    
-    def to_string(self):
-        """Generar string de la expresión"""
-        terminos_str = []
-        for termino in self.terminos:
-            t_str = termino.to_string()
-            if t_str:  # Ignorar términos vacíos
-                terminos_str.append(t_str)
-        
-        if not terminos_str:
+        # Primer término
+        self.add_term()
+
+    def add_term(self):
+        # Si ya hay términos, visualmente poner un "+" entre ellos seria ideal, 
+        # pero el TermBlock ya maneja su propio signo +/-.
+        t = TermBlock(self.terms_area, allow_y=self.allow_y)
+        t.pack(side="left", padx=5, pady=5, anchor="n")
+        self.terms.append(t)
+
+    def get_string(self):
+        # Filtrar términos eliminados
+        valid_terms = [t for t in self.terms if t.winfo_exists()]
+        if not valid_terms:
             return "0"
-        
-        # Unir con +, manejando signos negativos
-        resultado = terminos_str[0]
-        for t in terminos_str[1:]:
-            if t.startswith("-"):
-                resultado += "+" + t
+            
+        result = ""
+        for i, term in enumerate(valid_terms):
+            s = term.get_string()
+            # Logica de signos para concatenar
+            # Si el termino devuelve "-5*x", y no es el primero, queda "... -5*x"
+            # Si el termino devuelve "5*x" (positivo implícito), necesitamos poner el + si no es el primero
+            if i > 0 and not s.startswith("-"):
+                result += "+" + s
             else:
-                resultado += "+" + t
-        
-        return resultado
+                result += s
+        return result
 
-
-class EDitorGUI:
-    """Interfaz principal del editor de ecuaciones diferenciales"""
+class DifferentialEquationGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Editor de Ecuaciones Diferenciales")
-        self.root.geometry("1200x800")
+        self.root.title("Constructor de Ecuaciones Diferenciales para MTM")
+        self.root.geometry("1100x600")
         
-        # Frame principal con división VERTICAL
-        main_paned = tk.PanedWindow(root, orient=tk.VERTICAL)
-        main_paned.pack(fill=tk.BOTH, expand=True)
+        # --- TITULO ---
+        lbl_title = tk.Label(root, text="Ingrese la Ecuación Diferencial (Estructura de Bloques)", font=("Arial", 16, "bold"))
+        lbl_title.pack(pady=10)
         
-        # Panel superior: Editor
-        editor_frame = tk.Frame(main_paned, bg="#f5f5f5")
-        main_paned.add(editor_frame, height=500)
+        # --- AREA PRINCIPAL (Scrollable si se necesita, simplificado aquí con Frames) ---
+        main_container = tk.Frame(root)
+        main_container.pack(fill="both", expand=True, padx=10)
         
-        # Título
-        tk.Label(editor_frame, text="📝 Editor de Ecuaciones Diferenciales",
-                font=("Arial", 16, "bold"), bg="#f5f5f5", fg="#333").pack(pady=10)
+        # LADO IZQUIERDO (Con Y permitida)
+        lhs_frame = tk.LabelFrame(main_container, text="Lado Izquierdo (Expresión)", font=FONT_MAIN, bg="#eef")
+        lhs_frame.pack(side="left", fill="both", expand=True, padx=5)
         
-        # Frame para ecuación
-        ecuacion_frame = tk.Frame(editor_frame, bg="#f5f5f5")
-        ecuacion_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.lhs_editor = ExpressionBlock(lhs_frame, allow_y=True)
+        self.lhs_editor.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # Lado izquierdo
-        izq_label_frame = tk.LabelFrame(ecuacion_frame, text="📌 Lado Izquierdo (con y y derivadas)",
-                                       font=("Arial", 12, "bold"), bg="#e3f2fd", fg="#1565c0")
-        izq_label_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+        # IGUALDAD
+        eq_label = tk.Label(main_container, text="=", font=("Arial", 24, "bold"))
+        eq_label.pack(side="left", padx=5)
         
-        self.expresion_izq = ExpresionWidget(izq_label_frame, permitir_y=True, 
-                                     on_change_callback=None)  # Sin callback por ahora
+        # LADO DERECHO (Sin Y permitida)
+        rhs_frame = tk.LabelFrame(main_container, text="Lado Derecho (Solo f(x) o constantes)", font=FONT_MAIN, bg="#fee")
+        rhs_frame.pack(side="left", fill="both", expand=True, padx=5)
         
-        # Símbolo igual
-        tk.Label(ecuacion_frame, text="=", font=("Arial", 36, "bold"),
-                bg="#f5f5f5", fg="#d32f2f").pack(side=tk.LEFT, padx=10)
+        self.rhs_editor = ExpressionBlock(rhs_frame, allow_y=False)
+        self.rhs_editor.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # Lado derecho
-        der_label_frame = tk.LabelFrame(ecuacion_frame, text="📌 Lado Derecho (solo x, números, funciones)",
-                                       font=("Arial", 12, "bold"), bg="#fff3e0", fg="#e65100")
-        der_label_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+        # --- AREA INFERIOR ---
+        bottom_panel = tk.Frame(root, pady=10, bg="gray")
+        bottom_panel.pack(fill="x", side="bottom")
         
-        self.expresion_der = ExpresionWidget(der_label_frame, permitir_y=False,
-                                     on_change_callback=None)  # Sin callback por ahora
+        btn_generate = tk.Button(bottom_panel, text="ANALIZAR (Generar String)", font=("Arial", 12, "bold"), 
+                                 bg="orange", command=self.generate_string)
+        btn_generate.pack()
         
-        # Ahora sí asignar los callbacks
-        self.expresion_izq.on_change = self.actualizar_preview
-        self.expresion_der.on_change = self.actualizar_preview
+        self.output_lbl = tk.Entry(bottom_panel, font=("Consolas", 14), justify="center")
+        self.output_lbl.pack(fill="x", padx=20, pady=10)
 
-        # Panel derecho: Preview y validación
-        preview_frame = tk.Frame(main_paned, bg="#ffffff")
-        main_paned.add(preview_frame, width=400)
-        
-        tk.Label(preview_frame, text="🔍 Vista Previa y Validación",
-                font=("Arial", 14, "bold"), bg="#ffffff").pack(pady=10)
-        
-        # Preview del string
-        tk.Label(preview_frame, text="String generado:", 
-                font=("Arial", 11, "bold"), bg="#ffffff").pack(anchor="w", padx=10)
-        
-        self.preview_text = scrolledtext.ScrolledText(preview_frame, height=8, 
-                                                      font=("Courier", 11), 
-                                                      bg="#f0f0f0", wrap=tk.WORD)
-        self.preview_text.pack(fill=tk.BOTH, padx=10, pady=5)
-        
-        # Botón validar
-        tk.Button(preview_frame, text="✓ Validar Ecuación Diferencial",
-                 command=self.validar_ed, bg="#4CAF50", fg="white",
-                 font=("Arial", 12, "bold"), height=2).pack(pady=10, padx=10, fill=tk.X)
-        
-        # Resultado de validación
-        tk.Label(preview_frame, text="Resultado:", 
-                font=("Arial", 11, "bold"), bg="#ffffff").pack(anchor="w", padx=10)
-        
-        self.resultado_text = scrolledtext.ScrolledText(preview_frame, height=10,
-                                                       font=("Arial", 10),
-                                                       bg="#fffef0", wrap=tk.WORD)
-        self.resultado_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        
-        # Instrucciones
-        instrucciones = """
-📖 INSTRUCCIONES:
-• Lado izquierdo: contiene términos con y y sus derivadas
-• Lado derecho: solo puede tener x, números y funciones
-• Cada término se multiplica automáticamente por una derivada de y
-• Use "Agregar factor" para multiplicar dentro de un término
-• Use "Agregar término" para sumar términos
-• Marque "Negativo" para términos con signo menos
-        """
-        tk.Label(preview_frame, text=instrucciones, font=("Arial", 8),
-                bg="#ffffff", justify=tk.LEFT, anchor="w").pack(padx=10, pady=5)
-        
-        # Actualizar preview inicial
-        self.actualizar_preview()
-    
-    def actualizar_preview(self):
-        """Actualizar vista previa del string"""
-        izq_str = self.expresion_izq.to_string()
-        der_str = self.expresion_der.to_string()
-        
-        ecuacion = f"{izq_str}={der_str}"
-        
-        self.preview_text.delete(1.0, tk.END)
-        self.preview_text.insert(1.0, ecuacion)
-    
-    def validar_ed(self):
-        """Validar la ecuación con la MT"""
-        ecuacion = self.preview_text.get(1.0, tk.END).strip()
-        
-        self.resultado_text.delete(1.0, tk.END)
-        self.resultado_text.insert(tk.END, f"Validando: {ecuacion}\n\n")
-        
-        # Aquí integrarías con tu MT
-        # Por ahora, simulación simple
-        tiene_y = 'y' in ecuacion
-        tiene_derivada = "'" in ecuacion
-        tiene_igual = '=' in ecuacion
-        
-        if tiene_y and tiene_derivada and tiene_igual:
-            self.resultado_text.insert(tk.END, "✅ ACEPTA\n\n", "success")
-            self.resultado_text.insert(tk.END, "Esta cadena tiene la estructura de una ecuación diferencial válida.\n")
-            self.resultado_text.tag_config("success", foreground="green", font=("Arial", 12, "bold"))
-        else:
-            self.resultado_text.insert(tk.END, "❌ RECHAZA\n\n", "error")
-            self.resultado_text.insert(tk.END, "Esta cadena NO es una ecuación diferencial válida.\n\n")
-            if not tiene_y:
-                self.resultado_text.insert(tk.END, "• Falta la variable dependiente 'y'\n")
-            if not tiene_derivada:
-                self.resultado_text.insert(tk.END, "• No hay derivadas (falta al menos un ')\n")
-            if not tiene_igual:
-                self.resultado_text.insert(tk.END, "• Falta el símbolo de igualdad '='\n")
-            self.resultado_text.tag_config("error", foreground="red", font=("Arial", 12, "bold"))
-        
-        # Aquí llamarías a tu MT real:
-        # resultado = MT_Validador_ED.accepts_input(ecuacion)
-
+    def generate_string(self):
+        try:
+            lhs_str = self.lhs_editor.get_string()
+            rhs_str = self.rhs_editor.get_string()
+            
+            final_string = f"{lhs_str}={rhs_str}"
+            
+            # Limpiar y mostrar
+            self.output_lbl.delete(0, tk.END)
+            self.output_lbl.insert(0, final_string)
+            
+            # AQUI: Llamarías a tu clase TuringMachine con 'final_string'
+            # MTM_Validator.process(final_string)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error construyendo la ecuación: {e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = EDitorGUI(root)
+    app = DifferentialEquationGUI(root)
     root.mainloop()
