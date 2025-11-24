@@ -1,0 +1,1 @@
+# mira que si lo que acompaña a las "y" y a las " y''' " no sean funciones solo numeros
