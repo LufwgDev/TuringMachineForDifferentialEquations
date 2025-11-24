@@ -1,10 +1,14 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+# --- IMPORTAR TU LÓGICA MTM AQUÍ ---
+# from turing_machine import AnalizadorMTM 
+# (Si no tienes el archivo aún, usaremos una simulación abajo en la función 'enviar_a_mtm')
+
 # --- CONSTANTES Y MAPEO ---
 FONT_MAIN = ("Consolas", 10)
 
-# Mapeo de Etiqueta (GUI) -> Símbolo (MTM)
+# Diccionario: Clave = Lo que ve el usuario, Valor = Símbolo para la MTM
 FUNCTION_MAP = {
     "sen": "S",
     "cos": "C",
@@ -15,11 +19,11 @@ FUNCTION_MAP = {
     "sec": "s",
     "csc": "c",
     "cot": "t",
-    "arcsin": "IS",  # Ejemplo para Inversa Seno (I + S)
+    "arcsin": "IS",
     "arccos": "IC",
     "arctan": "IT",
     "exp": "E",      # e^...
-    "1/( )": "/"     # Recíproco
+    "1/( )": "/"     # Recíproco (MTM lo ve como funcion '/' )
 }
 
 class ScrollableFrame(tk.Frame):
@@ -78,8 +82,7 @@ class FactorBlock(tk.Frame):
         
         # --- CONTENEDOR DE EXPONENTE (Oculto inicialmente) ---
         self.exponent_frame = tk.Frame(self, padx=2, pady=2, bg="#eef")
-        # Se empacará cuando se active la potencia
-
+        
         self.vcmd = (self.register(self.validate_number), '%P')
         self.update_content()
 
@@ -97,7 +100,7 @@ class FactorBlock(tk.Frame):
             self.btn_pow.config(bg="#aaffaa", relief="sunken")
             self.exponent_frame.pack(side="right", anchor="n", padx=2)
             tk.Label(self.exponent_frame, text="^", font=("Arial", 8)).pack(side="left", anchor="n")
-            # El exponente es una Expresión completa (permite y^(x+1))
+            # El exponente es una Expresión completa
             self.exponent_expr = ExpressionBlock(self.exponent_frame, allow_y=self.allow_y, vertical_stack=False, is_exponent=True)
             self.exponent_expr.pack(side="left")
         else:
@@ -134,7 +137,6 @@ class FactorBlock(tk.Frame):
         elif selection == "Función":
             f = tk.Frame(self.main_content)
             f.pack()
-            # Usamos las llaves del diccionario para la lista visual
             funcs = list(FUNCTION_MAP.keys())
             self.func_selector = ttk.Combobox(f, values=funcs, state="readonly", width=7)
             self.func_selector.set("sen")
@@ -145,7 +147,11 @@ class FactorBlock(tk.Frame):
             self.inner_expr.pack(side="left")
             tk.Label(f, text=")").pack(side="left")
 
-    def get_string(self):
+    def get_string(self, readable=False):
+        """
+        readable=True  -> Retorna 'sen(x)', '1/(y)'
+        readable=False -> Retorna 'S(x)', '/(y)'
+        """
         sel = self.type_var.get()
         base_str = ""
         
@@ -153,21 +159,33 @@ class FactorBlock(tk.Frame):
             val = self.current_widget.get().strip()
             base_str = val if val else "0"
         elif sel == "Constante":
-            base_str = self.const_var.get() # π o e
+            base_str = self.const_var.get()
         elif sel == "Variable X":
             base_str = "x"
         elif sel == "Variable Y":
             derivs = int(self.deriv_spin.get())
             base_str = "y" + ("'" * derivs)
-        elif selection := "Función": 
+        elif sel == "Función":
             display_name = self.func_selector.get()
-            mtm_symbol = FUNCTION_MAP.get(display_name, "?")
-            inner_str = self.inner_expr.get_string()
-            base_str = f"{mtm_symbol}({inner_str})"
+            
+            # LOGICA DUAL: 
+            if readable:
+                # Versión legible
+                inner_str = self.inner_expr.get_string(readable=True)
+                if display_name == "1/( )":
+                    base_str = f"1/({inner_str})" # Mostramos el 1
+                else:
+                    base_str = f"{display_name}({inner_str})" # Mostramos 'sen', 'cos'
+            else:
+                # Versión MTM
+                mtm_symbol = FUNCTION_MAP.get(display_name, "?")
+                inner_str = self.inner_expr.get_string(readable=False)
+                base_str = f"{mtm_symbol}({inner_str})" # Mostramos 'S', '/'
 
-        # Manejo de Exponente
+        # Manejo de Exponente (Igual para ambos, pero recursivo)
         if self.has_exponent:
-            exp_str = self.exponent_expr.get_string()
+            exp_str = self.exponent_expr.get_string(readable=readable)
+            # Estructura (base)^(exponente)
             return f"({base_str})^({exp_str})"
         
         return base_str
@@ -203,9 +221,9 @@ class TermBlock(tk.Frame):
         f.pack(side="left", padx=2)
         self.factors.append(f)
 
-    def get_string(self):
+    def get_string(self, readable=False):
         sign = "-" if self.sign_var.get() == "-" else ""
-        parts = [f.get_string() for f in self.factors if f.winfo_exists()]
+        parts = [f.get_string(readable=readable) for f in self.factors if f.winfo_exists()]
         if not parts: return ""
         return f"{sign}{'*'.join(parts)}"
 
@@ -215,7 +233,7 @@ class ExpressionBlock(tk.Frame):
         self.allow_y = allow_y
         self.vertical_stack = vertical_stack
         
-        # --- CORRECCIÓN AQUÍ: Inicializar la lista antes de llamar a add_term ---
+        # Inicializar lista de términos
         self.terms = [] 
         
         self.terms_area = tk.Frame(self)
@@ -236,12 +254,12 @@ class ExpressionBlock(tk.Frame):
             t.pack(side="left", padx=2, anchor="n")
         self.terms.append(t)
 
-    def get_string(self):
+    def get_string(self, readable=False):
         valid = [t for t in self.terms if t.winfo_exists()]
         if not valid: return "0"
         res = ""
         for i, t in enumerate(valid):
-            s = t.get_string()
+            s = t.get_string(readable=readable)
             if not s: continue
             if i > 0 and not s.startswith("-"):
                 res += "+" + s
@@ -252,8 +270,8 @@ class ExpressionBlock(tk.Frame):
 class DifferentialEquationGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Constructor ED - MTM")
-        self.root.geometry("1200x750")
+        self.root.title("Constructor ED - MTM Integrado")
+        self.root.geometry("1200x800")
         
         # --- HEADER ---
         tk.Label(root, text="Entrada de Ecuación Diferencial (MTM Parsing)", font=("Arial", 14, "bold")).pack(pady=5)
@@ -283,25 +301,65 @@ class DifferentialEquationGUI:
         self.rhs_editor = ExpressionBlock(self.rhs_scroll.scrollable_content, allow_y=False, vertical_stack=True)
         self.rhs_editor.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # --- FOOTER (Output) ---
-        bot = tk.Frame(root, pady=10, bg="#444")
+        # --- FOOTER (Output y Control) ---
+        bot = tk.Frame(root, pady=10, bg="#333")
         bot.pack(fill="x", side="bottom")
         
-        tk.Button(bot, text="GENERAR CADENA MTM", font=("Arial", 11, "bold"), bg="orange", command=self.generate).pack()
-        self.out_vis = tk.Entry(bot, font=("Consolas", 12), justify="center", width=80)
-        self.out_vis.pack(pady=10)
-        tk.Label(bot, text="Cadena para la Máquina de Turing:", fg="white", bg="#444").pack()
+        btn_analizar = tk.Button(bot, text="ANALIZAR Y ENVIAR A MTM", font=("Arial", 12, "bold"), 
+                                 bg="orange", fg="black", command=self.procesar_ecuacion)
+        btn_analizar.pack(pady=5)
+        
+        # Grid para mostrar las dos cadenas
+        grid_out = tk.Frame(bot, bg="#333")
+        grid_out.pack(fill="x", padx=20)
+        
+        tk.Label(grid_out, text="Cadena Legible (Usuario):", fg="white", bg="#333", anchor="w").grid(row=0, column=0, sticky="w")
+        tk.Label(grid_out, text="Cadena Codificada (MTM):", fg="#aaaaff", bg="#333", anchor="w").grid(row=1, column=0, sticky="w")
+        
+        self.out_human = tk.Entry(grid_out, font=("Consolas", 12), width=80)
+        self.out_human.grid(row=0, column=1, padx=10, pady=5)
+        
+        self.out_mtm = tk.Entry(grid_out, font=("Consolas", 12), width=80, bg="#e0e0ff")
+        self.out_mtm.grid(row=1, column=1, padx=10, pady=5)
 
-    def generate(self):
+    def procesar_ecuacion(self):
         try:
-            lhs = self.lhs_editor.get_string()
-            rhs = self.rhs_editor.get_string()
-            final = f"{lhs}={rhs}"
-            self.out_vis.delete(0, tk.END)
-            self.out_vis.insert(0, final)
-            print(f"MTM Input: {final}") # Para debug en consola
+            # 1. Obtener cadena LEGIBLE
+            lhs_h = self.lhs_editor.get_string(readable=True)
+            rhs_h = self.rhs_editor.get_string(readable=True)
+            final_human = f"{lhs_h}={rhs_h}"
+            
+            # 2. Obtener cadena MTM
+            lhs_m = self.lhs_editor.get_string(readable=False)
+            rhs_m = self.rhs_editor.get_string(readable=False)
+            final_mtm = f"{lhs_m}={rhs_m}"
+            
+            # 3. Mostrar en pantalla
+            self.out_human.delete(0, tk.END)
+            self.out_human.insert(0, final_human)
+            
+            self.out_mtm.delete(0, tk.END)
+            self.out_mtm.insert(0, final_mtm)
+            
+            # 4. ENVIAR A LA MÁQUINA DE TURING (Backend)
+            self.enviar_a_mtm(final_mtm)
+            
         except Exception as e:
             messagebox.showerror("Error", str(e))
+
+    def enviar_a_mtm(self, cadena):
+        """
+        Aquí es donde conectas con tu otro archivo.
+        """
+        print(f"Enviando a Turing Machine: {cadena}")
+        
+        # --- EJEMPLO DE USO REAL ---
+        # mtm_instance = AnalizadorMTM()
+        # resultado = mtm_instance.procesar_cadena(cadena)
+        # messagebox.showinfo("Resultado MTM", f"La máquina dice: {resultado}")
+        
+        # Por ahora, solo simulamos:
+        messagebox.showinfo("Conexión", f"Cadena enviada al backend:\n{cadena}")
 
 if __name__ == "__main__":
     root = tk.Tk()
