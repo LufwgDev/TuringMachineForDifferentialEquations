@@ -118,17 +118,39 @@ MT_Linealidad = NTM(
 )
 
 # Pruebas
-if __name__ == "__main__":
-    pruebas = [
-        ("y'+2*y=0", True, "Lineal simple"),
-        ("S(x)*y''+y=0", True, "Coeficientes con funciones de x"),
-        ("S(y)*y'=0", False, "y dentro de función"),
-        ("(y)^(2)+y'=0", False, "y en potencia"),
-        ("y*y'=0", False, "y multiplicada por otra y"),
-        ("(x)^(2)*y'=0", True, "x en potencia, lineal"),
-    ]
-    
-    for ecuacion, esperado, desc in pruebas:
-        resultado = MT_Linealidad.accepts_input(ecuacion)
-        es_lineal = (resultado and 'qlineal' in str(resultado))
-        print(f"{desc:30} | {ecuacion:20} | Esperado: {'Lineal' if esperado else 'No lineal':10} | Resultado: {'Lineal' if es_lineal else 'No lineal'}")
+
+
+
+print("prueba 3")
+from automata.tm.ntm import NTM
+# … tu definición de MT_Linealidad aquí …
+
+def es_linealec(cadena):
+    try:
+        configs = MT_Linealidad.read_input(cadena)  # esto devuelve un set de TMConfiguration
+    except Exception as e:
+        # Rechazo por no alcanzar estado final válido
+        return False
+
+    # configs es un set de TMConfiguration; cada uno tiene un atributo `state`
+    for config in configs:
+        if config.state == 'qlineal':
+            return True
+
+    # si ninguna configuración final está en qlineal -> no es lineal
+    return False
+
+
+# Ejemplo de pruebas:
+pruebas = [
+    ("y'+2*y=0", True),
+    ("S(x)*y''+y=0", True),
+    ("S(y)*y'=0", False),
+    ("(y)^(2)+y'=0", False),
+    ("y*y'=0", False),
+    ("(x)^(2)*y'=0", True),
+]
+
+for expr, esperado in pruebas:
+    resultado = es_linealec(expr)
+    print(expr, "=>", "Lineal" if resultado else "No lineal", "| Esperado:", "Lineal" if esperado else "No lineal")
