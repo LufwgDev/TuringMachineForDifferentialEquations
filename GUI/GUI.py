@@ -62,8 +62,16 @@ class FactorWidget:
     
     def crear_contenido_numero(self):
         """Input para número"""
+        # Función de validación
+        def validar_numero(char):
+            return char in '0123456789.eπ'
+        
+        vcmd = (self.contenido_frame.register(validar_numero), '%S')
+        
         self.widgets_especificos['entry'] = tk.Entry(self.contenido_frame, width=8, 
-                                                      font=("Arial", 10))
+                                                      font=("Arial", 10),
+                                                      validate='key',
+                                                      validatecommand=vcmd)
         self.widgets_especificos['entry'].pack()
         self.widgets_especificos['entry'].insert(0, "0")
         self.widgets_especificos['entry'].bind("<KeyRelease>", lambda e: self.on_change())
@@ -226,9 +234,10 @@ class TerminoWidget:
                  command=self.agregar_factor, bg="#4CAF50", fg="white",
                  font=("Arial", 9)).pack(pady=3)
         
-        # Mostrar derivada al final
-        tk.Label(self.frame, text=f"× {derivada_texto}", 
-                font=("Arial", 11, "bold"), bg="#e8f4f8", fg="#cc0000").pack(pady=2)
+        # Mostrar derivada al final SOLO si permite y
+        if self.parent_expresion.permitir_y:
+            tk.Label(self.frame, text=f"× {derivada_texto}", 
+                    font=("Arial", 11, "bold"), bg="#e8f4f8", fg="#cc0000").pack(pady=2)
     
     def get_derivada_texto(self):
         """Obtener texto de la derivada según orden"""
@@ -261,15 +270,16 @@ class TerminoWidget:
         # Unir factores con *
         factores_str = "*".join(f.to_string() for f in self.factores)
         
-        # Agregar derivada
-        derivada_str = self.get_derivada_texto()
-        
-        # Combinar
-        if factores_str and factores_str != "0":
-            resultado = f"{factores_str}*{derivada_str}"
+        # Agregar derivada SOLO si permite y
+        if self.parent_expresion.permitir_y:
+            derivada_str = self.get_derivada_texto()
+            if factores_str and factores_str != "0":
+                resultado = f"{factores_str}*{derivada_str}"
+            else:
+                return ""
         else:
-            # Si todos los factores son 0, el término es 0*y^n que se simplifica a 0
-            return ""
+            # Lado derecho: sin derivadas
+            resultado = factores_str if factores_str else "0"
         
         # Agregar signo negativo si aplica
         if self.negativo_var.get():
@@ -293,6 +303,12 @@ class ExpresionWidget:
         else:
             self.frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
+        # Botón agregar término (ARRIBA DEL CANVAS)
+        if not compact:
+            tk.Button(self.frame, text="➕ Agregar término (sumar)", 
+                     command=lambda: self.agregar_termino(), 
+                     bg="#2196F3", fg="white", font=("Arial", 10, "bold")).pack(pady=5, fill=tk.X)
+        
         # Scrollable frame para términos
         canvas = tk.Canvas(self.frame, bg="#ffffff")
         scrollbar = tk.Scrollbar(self.frame, orient="vertical", command=canvas.yview)
@@ -314,17 +330,11 @@ class ExpresionWidget:
         
         # Agregar primer término
         if permitir_y:
-            # Lado izquierdo: empezar con y''' 
-            self.agregar_termino(orden_inicial=3 if not compact else 1)
+            # Lado izquierdo: empezar con y (orden 0)
+            self.agregar_termino(orden_inicial=0 if not compact else 0)
         else:
             # Lado derecho: solo constantes/x
             self.agregar_termino(orden_inicial=None)
-        
-        # Botón agregar término
-        if not compact:
-            tk.Button(self.frame, text="➕ Agregar término (sumar)", 
-                     command=lambda: self.agregar_termino(), 
-                     bg="#2196F3", fg="white", font=("Arial", 10, "bold")).pack(pady=5)
     
     def agregar_termino(self, orden_inicial=None):
         """Agregar nuevo término"""
@@ -332,9 +342,9 @@ class ExpresionWidget:
             # Calcular siguiente orden de derivada
             if self.permitir_y and self.terminos:
                 ultimo_orden = self.terminos[-1].derivada_orden
-                nuevo_orden = max(0, ultimo_orden - 1)
+                nuevo_orden = ultimo_orden + 1  # Incrementar (y, y', y'', ...)
             elif self.permitir_y:
-                nuevo_orden = 3  # Empezar con y'''
+                nuevo_orden = 0  # Empezar con y (sin derivadas)
             else:
                 nuevo_orden = -1  # Lado derecho, sin derivadas
         else:
@@ -382,13 +392,13 @@ class EDitorGUI:
         self.root.title("Editor de Ecuaciones Diferenciales")
         self.root.geometry("1200x800")
         
-        # Frame principal con división
-        main_paned = tk.PanedWindow(root, orient=tk.HORIZONTAL)
+        # Frame principal con división VERTICAL
+        main_paned = tk.PanedWindow(root, orient=tk.VERTICAL)
         main_paned.pack(fill=tk.BOTH, expand=True)
         
-        # Panel izquierdo: Editor
+        # Panel superior: Editor
         editor_frame = tk.Frame(main_paned, bg="#f5f5f5")
-        main_paned.add(editor_frame, width=800)
+        main_paned.add(editor_frame, height=500)
         
         # Título
         tk.Label(editor_frame, text="📝 Editor de Ecuaciones Diferenciales",
@@ -417,9 +427,11 @@ class EDitorGUI:
         
         self.expresion_der = ExpresionWidget(der_label_frame, permitir_y=False,
                                      on_change_callback=None)  # Sin callback por ahora
+        
         # Ahora sí asignar los callbacks
         self.expresion_izq.on_change = self.actualizar_preview
         self.expresion_der.on_change = self.actualizar_preview
+
         # Panel derecho: Preview y validación
         preview_frame = tk.Frame(main_paned, bg="#ffffff")
         main_paned.add(preview_frame, width=400)
