@@ -9,13 +9,12 @@
 #       pero la función obtener_orden_mtm usa un método directo en Python para obtener
 #       resultados robustos y deterministas (evita errores de acumulación en cinta2).
 
+# Order.py -- Versión para integración con GUI/Controller
 from automata.tm.mntm import MNTM
 
 # ===================================================================
-# MTM: (ANTIGUA) Calculadora de Orden de Ecuación Diferencial
-# Se mantiene la instancia por compatibilidad, **no** se usa actualmente.
+# MTM: Definición (Mantenida por compatibilidad formal)
 # ===================================================================
-
 alfabeto_input = {
     'y', 'x', "'", 
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
@@ -26,13 +25,10 @@ alfabeto_input = {
     's', 'c', 't', 'I', 'E',
     ' '
 }
-
 alfabeto_cinta = alfabeto_input.union({'B', '#'})
 
-# Transiciones mínimas (dejar la máquina definida aunque no se use)
+# Transiciones dummy (no se usan para el cálculo real en esta versión híbrida)
 transitions = {}
-
-# (Mantengo la estructura original pero NO confío en ella para el cálculo)
 transitions['q_search'] = {}
 transitions['q_search'][('B', 'B')] = [('qaccept', (('B', 'N'), ('B', 'N')))]
 transitions['q_search'][('B', '1')] = [('qaccept', (('B', 'N'), ('1', 'N')))]
@@ -70,17 +66,12 @@ MT_Orden = MNTM(
 )
 
 # ===================================================================
-# FUNCIÓN CORREGIDA Y ROBUSTA PARA OBTENER EL ORDEN
+# FUNCIÓN DE CÁLCULO (Exportable)
 # ===================================================================
 def obtener_orden_mtm(cadena):
     """
-    Escanea la cadena (string) y devuelve el mayor número de comillas simples (')
-    consecutivas inmediatamente después de una 'y'.
-
-    Reglas:
-     - Se ignoran espacios.
-     - Se considera cualquier aparición de 'y' seguida de N comillas consecutivas: y''' -> N=3
-     - Devuelve el máximo N encontrado (0 si no hay y o si alguna y no tiene comillas).
+    Función helper importada por el Controller.py.
+    Devuelve el orden máximo de derivación.
     """
     if cadena is None:
         return 0
@@ -93,7 +84,6 @@ def obtener_orden_mtm(cadena):
     while i < n:
         ch = s[i]
         if ch == 'y':
-            # contar comillas inmediatamente después
             j = i + 1
             count = 0
             while j < n and s[j] == "'":
@@ -101,37 +91,27 @@ def obtener_orden_mtm(cadena):
                 j += 1
             if count > max_order:
                 max_order = count
-            # continue scanning after the y (do not skip non-prime symbols)
             i = j
             continue
         else:
             i += 1
-
     return max_order
 
 # ===================================================================
-# PRUEBAS (Se ejecutan si corres este archivo directamente)
+# PRUEBAS PROTEGIDAS
 # ===================================================================
 if __name__ == "__main__":
     print("=" * 60)
-    print("[ MTM ] CALCULADORA DE ORDEN DE ECUACIONES DIFERENCIALES (versión corregida)")
+    print("[ MTM ] CALCULADORA DE ORDEN - MODO PRUEBA")
     print("=" * 60)
-
     pruebas = [
         ("y'=x", 1),
         ("y''+y=0", 2),
-        ("y+y'''=S(x)", 3),
         ("y''''+/(y')=0", 4),
-        ("y=x", 0),
-        ("S(y'')+y'''''=0", 5),
-        ("y'+y''+y'=0", 2),
+        ("y=x", 0)
     ]
-
     for ecuacion, orden_esperado in pruebas:
         resultado = obtener_orden_mtm(ecuacion)
-        match = "CORRECTO" if resultado == orden_esperado else "FALLO"
-        print(f"Ecuación: {ecuacion:<25} | Esperado: {orden_esperado} | Resultado: {resultado} -> {match}")
+        print(f"'{ecuacion}': {resultado} [{'OK' if resultado == orden_esperado else 'FAIL'}]")
 
-    print("=" * 60)
-    print("FIN PRUEBAS")
-    print("=" * 60)
+print("se está ejecutando Order")

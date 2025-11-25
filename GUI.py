@@ -1,10 +1,16 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+# Importamos el controlador
+try:
+    from Controller import SystemController
+except ImportError:
+    messagebox.showerror("Error Crítico", "No se encontró el archivo Controller.py")
+    sys.exit(1)
 
 # --- CONSTANTES Y MAPEO ---
 FONT_MAIN = ("Consolas", 10)
+FONT_RES = ("Arial", 10, "bold")
 
-# Diccionario: Clave = Lo que ve el usuario, Valor = Símbolo para la MTM
 FUNCTION_MAP = {
     "sen": "S",
     "cos": "C",
@@ -19,7 +25,7 @@ FUNCTION_MAP = {
     "arccos": "IC",
     "arctan": "IT",
     "exp": "E",      # e^...
-    "1/( )": "/"     # Recíproco (MTM lo ve como funcion '/' )
+    "1/( )": "/"     # Recíproco
 }
 
 class ScrollableFrame(tk.Frame):
@@ -144,10 +150,6 @@ class FactorBlock(tk.Frame):
             tk.Label(f, text=")").pack(side="left")
 
     def get_string(self, readable=False):
-        """
-        readable=True  -> Retorna 'sen(x)', '1/(y)'
-        readable=False -> Retorna 'S(x)', '/(y)'
-        """
         sel = self.type_var.get()
         base_str = ""
         
@@ -165,14 +167,12 @@ class FactorBlock(tk.Frame):
             display_name = self.func_selector.get()
             
             if readable:
-                # Versión legible
                 inner_str = self.inner_expr.get_string(readable=True)
                 if display_name == "1/( )":
                     base_str = f"1/({inner_str})"
                 else:
                     base_str = f"{display_name}({inner_str})"
             else:
-                # Versión MTM
                 mtm_symbol = FUNCTION_MAP.get(display_name, "?")
                 inner_str = self.inner_expr.get_string(readable=False)
                 base_str = f"{mtm_symbol}({inner_str})"
@@ -260,8 +260,11 @@ class DifferentialEquationGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Constructor ED - MTM Integrado")
-        self.root.geometry("1200x800")
+        self.root.geometry("1200x850") # Un poco más alto para los resultados
         
+        # INSTANCIA DEL CONTROLADOR
+        self.controller = SystemController()
+
         # --- HEADER ---
         tk.Label(root, text="Entrada de Ecuación Diferencial (MTM Parsing)", font=("Arial", 14, "bold")).pack(pady=5)
         
@@ -269,92 +272,163 @@ class DifferentialEquationGUI:
         main_split = tk.PanedWindow(root, orient="horizontal", sashwidth=5, bg="#999")
         main_split.pack(fill="both", expand=True, padx=10, pady=5)
         
-        # --- LHS (Izquierda) ---
-        lhs_c = tk.LabelFrame(main_split, text="Panel 1 (Contiene Y)", font=FONT_MAIN, bg="#eef")
+        # --- LHS ---
+        lhs_c = tk.LabelFrame(main_split, text="Lado Izquierdo (Contiene Y)", font=FONT_MAIN, bg="#eef")
         main_split.add(lhs_c, minsize=450)
         self.lhs_scroll = ScrollableFrame(lhs_c, bg_color="#eef")
         self.lhs_scroll.pack(fill="both", expand=True)
         self.lhs_editor = ExpressionBlock(self.lhs_scroll.scrollable_content, allow_y=True, vertical_stack=True)
         self.lhs_editor.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # --- OPERADOR CENTRAL (SELECTOR) ---
+        # --- OPERADOR CENTRAL ---
         op_f = tk.Frame(main_split, bg="white")
         main_split.add(op_f, minsize=60)
-        
         tk.Label(op_f, text="Signo:", font=("Arial", 8)).pack(pady=5)
-        
-        # AQUI ESTA EL CAMBIO: Combobox para elegir "=" o "+"
         self.operator_var = tk.StringVar(value="=")
         self.operator_selector = ttk.Combobox(op_f, textvariable=self.operator_var, 
                                               values=["=", "+"], state="readonly", 
                                               width=3, font=("Arial", 14, "bold"), justify="center")
         self.operator_selector.pack(expand=True)
         
-        # --- RHS (Derecha) ---
-        rhs_c = tk.LabelFrame(main_split, text="Panel 2 (f(x) o Constantes)", font=FONT_MAIN, bg="#fee")
+        # --- RHS ---
+        rhs_c = tk.LabelFrame(main_split, text="Lado Derecho (f(x) o Constantes)", font=FONT_MAIN, bg="#fee")
         main_split.add(rhs_c, minsize=450)
         self.rhs_scroll = ScrollableFrame(rhs_c, bg_color="#fee")
         self.rhs_scroll.pack(fill="both", expand=True)
         self.rhs_editor = ExpressionBlock(self.rhs_scroll.scrollable_content, allow_y=False, vertical_stack=True)
         self.rhs_editor.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # --- FOOTER (Output y Control) ---
-        bot = tk.Frame(root, pady=10, bg="#333")
+        # --- ZONA DE CONTROL Y RESULTADOS ---
+        self.create_results_panel(root)
+
+    def create_results_panel(self, root):
+        bot = tk.Frame(root, pady=10, bg="#333", relief="raised", borderwidth=3)
         bot.pack(fill="x", side="bottom")
         
-        btn_analizar = tk.Button(bot, text="ANALIZAR Y ENVIAR A MTM", font=("Arial", 12, "bold"), 
+        # Botón Grande de Análisis
+        btn_analizar = tk.Button(bot, text="🔎 ANALIZAR ECUACIÓN", font=("Arial", 12, "bold"), 
                                  bg="orange", fg="black", command=self.procesar_ecuacion)
-        btn_analizar.pack(pady=5)
+        btn_analizar.pack(pady=10)
+
+        # Contenedor de Resultados
+        res_frame = tk.Frame(bot, bg="#444", padx=10, pady=10)
+        res_frame.pack(fill="x", padx=10)
+
+        # Grid de Etiquetas de Resultados
+        # Fila 0: Strings
+        tk.Label(res_frame, text="Cadena Legible:", fg="white", bg="#444", font=("Arial", 9)).grid(row=0, column=0, sticky="e")
+        self.lbl_human = tk.Entry(res_frame, font=("Consolas", 10), width=60)
+        self.lbl_human.grid(row=0, column=1, columnspan=3, padx=5, pady=2, sticky="w")
+
+        tk.Label(res_frame, text="Cadena MTM:", fg="#aaaaff", bg="#444", font=("Arial", 9)).grid(row=1, column=0, sticky="e")
+        self.lbl_mtm = tk.Entry(res_frame, font=("Consolas", 10), width=60, bg="#e0e0ff")
+        self.lbl_mtm.grid(row=1, column=1, columnspan=3, padx=5, pady=2, sticky="w")
+
+        # Separador
+        ttk.Separator(res_frame, orient="horizontal").grid(row=2, column=0, columnspan=4, sticky="ew", pady=10)
+
+        # Fila 3: Indicadores (Semáforos)
+        # 1. Validación
+        tk.Label(res_frame, text="Estructura:", fg="white", bg="#444", font=FONT_RES).grid(row=3, column=0, sticky="e")
+        self.res_valid = tk.Label(res_frame, text="---", font=FONT_RES, bg="gray", width=15)
+        self.res_valid.grid(row=3, column=1, padx=5, pady=5)
+
+        # 2. Orden
+        tk.Label(res_frame, text="Orden:", fg="white", bg="#444", font=FONT_RES).grid(row=3, column=2, sticky="e")
+        self.res_order = tk.Label(res_frame, text="---", font=FONT_RES, bg="gray", width=15)
+        self.res_order.grid(row=3, column=3, padx=5, pady=5)
+
+        # Fila 4
+        # 3. Linealidad
+        tk.Label(res_frame, text="Linealidad:", fg="white", bg="#444", font=FONT_RES).grid(row=4, column=0, sticky="e")
+        self.res_linear = tk.Label(res_frame, text="---", font=FONT_RES, bg="gray", width=15)
+        self.res_linear.grid(row=4, column=1, padx=5, pady=5)
+
+        # 4. Coeficientes
+        tk.Label(res_frame, text="Coeficientes:", fg="white", bg="#444", font=FONT_RES).grid(row=4, column=2, sticky="e")
+        self.res_coeffs = tk.Label(res_frame, text="---", font=FONT_RES, bg="gray", width=15)
+        self.res_coeffs.grid(row=4, column=3, padx=5, pady=5)
+
+        # Fila 5: Homogeneidad y Mensajes
+        tk.Label(res_frame, text="Homogeneidad:", fg="white", bg="#444", font=FONT_RES).grid(row=5, column=0, sticky="e")
+        self.res_homo = tk.Label(res_frame, text="---", font=FONT_RES, bg="gray", width=15)
+        self.res_homo.grid(row=5, column=1, padx=5, pady=5)
+
+        self.lbl_msg = tk.Label(res_frame, text="Esperando análisis...", fg="yellow", bg="#444", font=("Arial", 9, "italic"))
+        self.lbl_msg.grid(row=5, column=2, columnspan=2, sticky="w", padx=10)
+
+    def update_dashboard(self, data):
+        """ Actualiza los colores y textos del panel inferior """
         
-        # Grid para mostrar las dos cadenas
-        grid_out = tk.Frame(bot, bg="#333")
-        grid_out.pack(fill="x", padx=20)
-        
-        tk.Label(grid_out, text="Cadena Legible (Usuario):", fg="white", bg="#333", anchor="w").grid(row=0, column=0, sticky="w")
-        tk.Label(grid_out, text="Cadena Codificada (MTM):", fg="#aaaaff", bg="#333", anchor="w").grid(row=1, column=0, sticky="w")
-        
-        self.out_human = tk.Entry(grid_out, font=("Consolas", 12), width=80)
-        self.out_human.grid(row=0, column=1, padx=10, pady=5)
-        
-        self.out_mtm = tk.Entry(grid_out, font=("Consolas", 12), width=80, bg="#e0e0ff")
-        self.out_mtm.grid(row=1, column=1, padx=10, pady=5)
+        # 1. Validación
+        if data["es_valida"]:
+            self.res_valid.config(text="VÁLIDA", bg="#66ff66", fg="black") # Verde
+        else:
+            self.res_valid.config(text="INVÁLIDA", bg="#ff6666", fg="black") # Rojo
+            # Si es inválida, reseteamos el resto a gris
+            self.res_order.config(text="-", bg="gray")
+            self.res_linear.config(text="-", bg="gray")
+            self.res_coeffs.config(text="-", bg="gray")
+            self.res_homo.config(text="-", bg="gray")
+            self.lbl_msg.config(text=data["mensaje"], fg="orange")
+            return
+
+        # 2. Orden
+        orden = data["orden"]
+        self.res_order.config(text=str(orden), bg="#aaddff", fg="black") # Azul claro
+
+        # 3. Linealidad
+        if data["linealidad"] == "Lineal":
+            self.res_linear.config(text="LINEAL", bg="#66ff66", fg="black")
+        else:
+            self.res_linear.config(text="NO LINEAL", bg="#ffff99", fg="black") # Amarillo
+
+        # 4. Coeficientes
+        coef = data["coeficientes"]
+        if coef == "Constantes":
+            self.res_coeffs.config(text="CONSTANTES", bg="#ccffcc", fg="black")
+        elif coef == "Variables":
+            self.res_coeffs.config(text="VARIABLES", bg="#ffcc99", fg="black")
+        else:
+            self.res_coeffs.config(text="-", bg="gray")
+
+        # 5. Homogeneidad
+        homo = data["homogeneidad"]
+        if homo == "Homogénea":
+            self.res_homo.config(text="HOMOGÉNEA", bg="#ddccff", fg="black")
+        else:
+            self.res_homo.config(text="NO HOMOGÉNEA", bg="#ffddee", fg="black")
+
+        self.lbl_msg.config(text=data["mensaje"], fg="white")
 
     def procesar_ecuacion(self):
         try:
-            # Obtener el operador central
             operator = self.operator_var.get()
             
-            # 1. Obtener cadena LEGIBLE
+            # Cadenas
             lhs_h = self.lhs_editor.get_string(readable=True)
             rhs_h = self.rhs_editor.get_string(readable=True)
-            # Usamos espacios para que se vea mejor al ojo humano
             final_human = f"{lhs_h} {operator} {rhs_h}"
             
-            # 2. Obtener cadena MTM
             lhs_m = self.lhs_editor.get_string(readable=False)
             rhs_m = self.rhs_editor.get_string(readable=False)
-            # Sin espacios extra para la MTM
             final_mtm = f"{lhs_m}{operator}{rhs_m}"
             
-            # 3. Mostrar en pantalla
-            self.out_human.delete(0, tk.END)
-            self.out_human.insert(0, final_human)
+            # Mostrar Cadenas
+            self.lbl_human.delete(0, tk.END)
+            self.lbl_human.insert(0, final_human)
+            self.lbl_mtm.delete(0, tk.END)
+            self.lbl_mtm.insert(0, final_mtm)
             
-            self.out_mtm.delete(0, tk.END)
-            self.out_mtm.insert(0, final_mtm)
+            # --- LLAMADA AL CONTROLADOR ---
+            # Ahora pedimos al cerebro que analice todo
+            resultados = self.controller.analizar_cadena(final_mtm)
             
-            # 4. ENVIAR A LA MÁQUINA DE TURING (Backend)
-            self.enviar_a_mtm(final_mtm)
+            # Actualizamos la GUI con el diccionario recibido
+            self.update_dashboard(resultados)
             
         except Exception as e:
-            messagebox.showerror("Error", str(e))
-
-    def enviar_a_mtm(self, cadena):
-        """
-        Función puente para conectar con el archivo de la lógica.
-        """
-        print(f"Enviando a Turing Machine: {cadena}")
-        messagebox.showinfo("MTM Link", f"Cadena enviada al backend:\n{cadena}")
+            messagebox.showerror("Error GUI", str(e))
 
 if __name__ == "__main__":
     root = tk.Tk()

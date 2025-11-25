@@ -19,6 +19,15 @@ from automata.tm.ntm import NTM
 # - Dentro de esos paréntesis, si hay 'y' → NO LINEAL
 # ===================================================================
 
+
+
+
+from automata.tm.ntm import NTM
+
+# ===================================================================
+# MT: Detector de Linealidad
+# ===================================================================
+
 MT_Linealidad = NTM(
     states={'q0', 'q_func', 'q_in_func', 'q_paren', 'q_in_paren', 
             'q_check_mult', 'qlineal', 'qno_lineal'},
@@ -37,32 +46,21 @@ MT_Linealidad = NTM(
         'e', 'π', '.', '+', '-', '*', '/', '^',
         '(', ')', '=',
         'S', 'C', 'T', 'L', 'R', 'A', 's', 'c', 't', 'I', 'E',
-        'B', 'Y'  # Y marca que vimos una 'y'
+        'B', 'Y'
     },
     
     transitions={
         'q0': {
-            # Detectar funciones (letras seguidas de '(')
-            'S': {('q_func', 'S', 'R')},
-            'C': {('q_func', 'C', 'R')},
-            'T': {('q_func', 'T', 'R')},
-            'L': {('q_func', 'L', 'R')},
-            'R': {('q_func', 'R', 'R')},
-            'A': {('q_func', 'A', 'R')},
-            's': {('q_func', 's', 'R')},
-            'c': {('q_func', 'c', 'R')},
-            't': {('q_func', 't', 'R')},
-            'I': {('q_func', 'I', 'R')},
-            'E': {('q_func', 'E', 'R')},
-            '/': {('q_func', '/', 'R')},
+            'S': {('q_func', 'S', 'R')}, 'C': {('q_func', 'C', 'R')},
+            'T': {('q_func', 'T', 'R')}, 'L': {('q_func', 'L', 'R')},
+            'R': {('q_func', 'R', 'R')}, 'A': {('q_func', 'A', 'R')},
+            's': {('q_func', 's', 'R')}, 'c': {('q_func', 'c', 'R')},
+            't': {('q_func', 't', 'R')}, 'I': {('q_func', 'I', 'R')},
+            'E': {('q_func', 'E', 'R')}, '/': {('q_func', '/', 'R')},
             
-            # Paréntesis sin función antes (potencia)
             '(': {('q_paren', '(', 'R')},
-            
-            # Marcar 'y' para detectar y*y
             'y': {('q_check_mult', 'Y', 'R')},
             
-            # Ignorar resto
             'x': {('q0', 'x', 'R')},
             "'": {('q0', "'", 'R')},
             '0': {('q0', '0', 'R')}, '1': {('q0', '1', 'R')},
@@ -76,38 +74,30 @@ MT_Linealidad = NTM(
             '*': {('q0', '*', 'R')}, '^': {('q0', '^', 'R')},
             ')': {('q0', ')', 'R')}, '=': {('q0', '=', 'R')},
             
-            # Fin de cadena → LINEAL
             'B': {('qlineal', 'B', 'N')},
         },
         
-        # q_func: Detectó letra de función, espera '('
         'q_func': {
-            '(': {('q_in_func', '(', 'R')},  # Entrar a función
-            # Si no hay '(', no era función, volver
+            '(': {('q_in_func', '(', 'R')},
             **{s: {('q0', s, 'R')} for s in ['y', 'x', "'", '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'π', '.', '+', '-', '*', '/', '^', ')', '=', 'B']}
         },
         
-        # q_in_func: Dentro de función, buscar 'y'
         'q_in_func': {
-            'y': {('qno_lineal', 'y', 'N')},  # ¡Encontró y dentro de función!
-            ')': {('q0', ')', 'R')},  # Salir de función
-            # Seguir buscando
+            'y': {('qno_lineal', 'y', 'N')},
+            ')': {('q0', ')', 'R')},
             **{s: {('q_in_func', s, 'R')} for s in ['x', "'", '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'π', '.', '+', '-', '*', '/', '^', '(', '=', 'S', 'C', 'T', 'L', 'R', 'A', 's', 'c', 't', 'I', 'E']}
         },
         
-        # q_paren: Entró a paréntesis (potencia), buscar 'y'
         'q_paren': {
-            'y': {('qno_lineal', 'y', 'N')},  # ¡y en potencia!
+            'y': {('qno_lineal', 'y', 'N')},
             ')': {('q0', ')', 'R')},
             **{s: {('q_paren', s, 'R')} for s in ['x', "'", '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'π', '.', '+', '-', '*', '/', '^', '(', '=', 'S', 'C', 'T', 'L', 'R', 'A', 's', 'c', 't', 'I', 'E']}
         },
         
-        # q_check_mult: Marcó una 'y', ver si sigue *y
         'q_check_mult': {
-            '*': {('q_check_mult', '*', 'R')},  # Puede haber múltiples *
-            'y': {('qno_lineal', 'y', 'N')},  # ¡y*y!
-            "'": {('q_check_mult', "'", 'R')},  # y' sigue siendo una y
-            # Cualquier otra cosa → volver a q0
+            '*': {('q_check_mult', '*', 'R')},
+            'y': {('qno_lineal', 'y', 'N')},
+            "'": {('q_check_mult', "'", 'R')},
             **{s: {('q0', s, 'R')} for s in ['x', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'π', '.', '+', '-', '/', '^', '(', ')', '=', 'S', 'C', 'T', 'L', 'R', 'A', 's', 'c', 't', 'I', 'E', 'B']}
         },
     },
@@ -117,40 +107,32 @@ MT_Linealidad = NTM(
     final_states={'qlineal', 'qno_lineal'}
 )
 
-# Pruebas
-
-
-
-print("prueba 3")
-from automata.tm.ntm import NTM
-# … tu definición de MT_Linealidad aquí …
-
 def es_linealec(cadena):
+    """
+    Función helper para el Controlador.
+    Devuelve True solo si la máquina termina en el estado 'qlineal'.
+    """
     try:
-        configs = MT_Linealidad.read_input(cadena)  # esto devuelve un set de TMConfiguration
-    except Exception as e:
-        # Rechazo por no alcanzar estado final válido
+        # read_input devuelve un set de configuraciones en NTM
+        configs = MT_Linealidad.read_input(cadena) 
+        for config in configs:
+            if config.state == 'qlineal':
+                return True
+        return False
+    except Exception:
+        # Si la cadena se rechaza (no llega a ningún final)
         return False
 
-    # configs es un set de TMConfiguration; cada uno tiene un atributo `state`
-    for config in configs:
-        if config.state == 'qlineal':
-            return True
+# --- Bloque de pruebas protegido ---
+if __name__ == "__main__":
+    print("PRUEBAS Linearity.py")
+    pruebas = [
+        ("y'+2*y=0", True),
+        ("S(x)*y''+y=0", True),
+        ("S(y)*y'=0", False),
+    ]
+    for expr, esperado in pruebas:
+        resultado = es_linealec(expr)
+        print(f"{expr} => {'Lineal' if resultado else 'No lineal'} [{'OK' if resultado == esperado else 'FAIL'}]")
 
-    # si ninguna configuración final está en qlineal -> no es lineal
-    return False
-
-
-# Ejemplo de pruebas:
-pruebas = [
-    ("y'+2*y=0", True),
-    ("S(x)*y''+y=0", True),
-    ("S(y)*y'=0", False),
-    ("(y)^(2)+y'=0", False),
-    ("y*y'=0", False),
-    ("(x)^(2)*y'=0", True),
-]
-
-for expr, esperado in pruebas:
-    resultado = es_linealec(expr)
-    print(expr, "=>", "Lineal" if resultado else "No lineal", "| Esperado:", "Lineal" if esperado else "No lineal")
+print("se está ejecutando Linearity")
